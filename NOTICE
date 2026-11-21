@@ -1,0 +1,19 @@
+Agent Harness
+Copyright 2026 Agent Harness authors. All rights reserved.
+
+This product includes software developed by the Agent Harness project.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this product except in compliance with the License.
+A copy of the License is included in the file LICENSE.
+
+TRADEMARKS
+"Agent Harness" and the Agent Harness logo are trademarks of the project owner.
+Modified or derivative builds may be freely redistributed under the License,
+but must not be presented as official builds or use these trademarks to imply
+endorsement. See README for details.
+
+THIRD-PARTY COMPONENTS
+This product bundles or depends on third-party open-source components
+(including but not limited to Crawl4AI, Playwright/Chromium, usearch, numpy,
+FastAPI, and the MCP SDK). Each remains under its own license; see the
+respective license notices of those components.

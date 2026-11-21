@@ -1,0 +1,206 @@
+pass
+import asyncio, json, hashlib, time
+from contextlib import suppress
+from typing import Dict, Optional
+from crawl4ai import AsyncWebCrawler, BrowserConfig
+from utils import load_config, get_container_memory_percent
+import logging
+
+logger = logging.getLogger(__name__)
+CONFIG = load_config()
+
+pass
+PERMANENT: Optional[AsyncWebCrawler] = None
+HOT_POOL: Dict[str, AsyncWebCrawler] = {}
+COLD_POOL: Dict[str, AsyncWebCrawler] = {}
+LAST_USED: Dict[str, float] = {}
+USAGE_COUNT: Dict[str, int] = {}
+LOCK = asyncio.Lock()
+
+pass
+MEM_LIMIT = CONFIG.get("crawler", {}).get("memory_threshold_percent", 95.0)
+BASE_IDLE_TTL = CONFIG.get("crawler", {}).get("pool", {}).get("idle_ttl_sec", 300)
+RECYCLE_PAGES = CONFIG.get("crawler", {}).get("pool", {}).get("max_pages_before_recycle", 0)
+DEFAULT_CONFIG_SIG = None
+
+
+def _apply_pool_defaults(cfg: BrowserConfig) -> BrowserConfig:
+    if RECYCLE_PAGES and not cfg.max_pages_before_recycle:
+        cfg.max_pages_before_recycle = RECYCLE_PAGES
+    return cfg
+
+
+def get_pool_snapshot() -> dict:
+    return {
+        "permanent": PERMANENT,
+        "permanent_sig": DEFAULT_CONFIG_SIG,
+        "hot_pool": HOT_POOL.copy(),
+        "cold_pool": COLD_POOL.copy(),
+        "last_used": LAST_USED.copy(),
+        "usage_count": USAGE_COUNT.copy(),
+    }
+
+
+def _sig(cfg: BrowserConfig) -> str:
+    payload = json.dumps(cfg.to_dict(), sort_keys=True, separators=(",",":"))
+    return hashlib.sha1(payload.encode()).hexdigest()
+
+def _is_default_config(sig: str) -> bool:
+    return sig == DEFAULT_CONFIG_SIG
+
+async def get_crawler(cfg: BrowserConfig) -> AsyncWebCrawler:
+    sig = _sig(_apply_pool_defaults(cfg))
+    async with LOCK:
+        pass
+        if PERMANENT and _is_default_config(sig):
+            LAST_USED[sig] = time.time()
+            USAGE_COUNT[sig] = USAGE_COUNT.get(sig, 0) + 1
+            if not hasattr(PERMANENT, 'active_requests'):
+                PERMANENT.active_requests = 0
+            PERMANENT.active_requests += 1
+            logger.info("🔥 Using permanent browser")
+            return PERMANENT
+
+        pass
+        if sig in HOT_POOL:
+            LAST_USED[sig] = time.time()
+            USAGE_COUNT[sig] = USAGE_COUNT.get(sig, 0) + 1
+            crawler = HOT_POOL[sig]
+            if not hasattr(crawler, 'active_requests'):
+                crawler.active_requests = 0
+            crawler.active_requests += 1
+            logger.info(f"♨️  Using hot pool browser (sig={sig[:8]}, active={crawler.active_requests})")
+            return crawler
+
+        pass
+        if sig in COLD_POOL:
+            LAST_USED[sig] = time.time()
+            USAGE_COUNT[sig] = USAGE_COUNT.get(sig, 0) + 1
+            crawler = COLD_POOL[sig]
+            if not hasattr(crawler, 'active_requests'):
+                crawler.active_requests = 0
+            crawler.active_requests += 1
+
+            if USAGE_COUNT[sig] >= 3:
+                logger.info(f"⬆️  Promoting to hot pool (sig={sig[:8]}, count={USAGE_COUNT[sig]})")
+                HOT_POOL[sig] = COLD_POOL.pop(sig)
+
+                pass
+                try:
+                    from monitor import get_monitor
+                    await get_monitor().track_janitor_event("promote", sig, {"count": USAGE_COUNT[sig]})
+                except:
+                    pass
+
+                return HOT_POOL[sig]
+
+            logger.info(f"❄️  Using cold pool browser (sig={sig[:8]})")
+            return crawler
+
+        pass
+        mem_pct = get_container_memory_percent()
+        if mem_pct >= MEM_LIMIT:
+            logger.error(f"💥 Memory pressure: {mem_pct:.1f}% >= {MEM_LIMIT}%")
+            raise MemoryError(f"Memory at {mem_pct:.1f}%, refusing new browser")
+
+        pass
+        logger.info(f"🆕 Creating new browser in cold pool (sig={sig[:8]}, mem={mem_pct:.1f}%)")
+        crawler = AsyncWebCrawler(config=cfg, thread_safe=False)
+        await crawler.start()
+        crawler.active_requests = 1
+        COLD_POOL[sig] = crawler
+        LAST_USED[sig] = time.time()
+        USAGE_COUNT[sig] = 1
+        return crawler
+
+async def release_crawler(crawler: AsyncWebCrawler):
+    async with LOCK:
+        if hasattr(crawler, 'active_requests'):
+            crawler.active_requests = max(0, crawler.active_requests - 1)
+
+async def init_permanent(cfg: BrowserConfig):
+    global PERMANENT, DEFAULT_CONFIG_SIG
+    async with LOCK:
+        if PERMANENT:
+            return
+        DEFAULT_CONFIG_SIG = _sig(_apply_pool_defaults(cfg))
+        logger.info("🔥 Creating permanent default browser")
+        PERMANENT = AsyncWebCrawler(config=cfg, thread_safe=False)
+        await PERMANENT.start()
+        LAST_USED[DEFAULT_CONFIG_SIG] = time.time()
+        USAGE_COUNT[DEFAULT_CONFIG_SIG] = 0
+
+async def close_all():
+    async with LOCK:
+        tasks = []
+        if PERMANENT:
+            tasks.append(PERMANENT.close())
+        tasks.extend([c.close() for c in HOT_POOL.values()])
+        tasks.extend([c.close() for c in COLD_POOL.values()])
+        await asyncio.gather(*tasks, return_exceptions=True)
+        HOT_POOL.clear()
+        COLD_POOL.clear()
+        LAST_USED.clear()
+        USAGE_COUNT.clear()
+
+async def janitor():
+    while True:
+        mem_pct = get_container_memory_percent()
+
+        pass
+        if mem_pct > 80:
+            interval, cold_ttl, hot_ttl = 10, 30, 120
+        elif mem_pct > 60:
+            interval, cold_ttl, hot_ttl = 30, 60, 300
+        else:
+            interval, cold_ttl, hot_ttl = 60, BASE_IDLE_TTL, BASE_IDLE_TTL * 2
+
+        await asyncio.sleep(interval)
+
+        now = time.time()
+        async with LOCK:
+            pass
+            for sig in list(COLD_POOL.keys()):
+                if now - LAST_USED.get(sig, now) > cold_ttl:
+                    crawler = COLD_POOL[sig]
+                    if getattr(crawler, 'active_requests', 0) > 0:
+                        continue
+                    idle_time = now - LAST_USED[sig]
+                    logger.info(f"🧹 Closing cold browser (sig={sig[:8]}, idle={idle_time:.0f}s)")
+                    with suppress(Exception):
+                        await crawler.close()
+                    COLD_POOL.pop(sig, None)
+                    LAST_USED.pop(sig, None)
+                    USAGE_COUNT.pop(sig, None)
+
+                    pass
+                    try:
+                        from monitor import get_monitor
+                        await get_monitor().track_janitor_event("close_cold", sig, {"idle_seconds": int(idle_time), "ttl": cold_ttl})
+                    except:
+                        pass
+
+            pass
+            for sig in list(HOT_POOL.keys()):
+                if now - LAST_USED.get(sig, now) > hot_ttl:
+                    crawler = HOT_POOL[sig]
+                    if getattr(crawler, 'active_requests', 0) > 0:
+                        continue
+                    idle_time = now - LAST_USED[sig]
+                    logger.info(f"🧹 Closing hot browser (sig={sig[:8]}, idle={idle_time:.0f}s)")
+                    with suppress(Exception):
+                        await crawler.close()
+                    HOT_POOL.pop(sig, None)
+                    LAST_USED.pop(sig, None)
+                    USAGE_COUNT.pop(sig, None)
+
+                    pass
+                    try:
+                        from monitor import get_monitor
+                        await get_monitor().track_janitor_event("close_hot", sig, {"idle_seconds": int(idle_time), "ttl": hot_ttl})
+                    except:
+                        pass
+
+            pass
+            if mem_pct > 60:
+                logger.info(f"📊 Pool: hot={len(HOT_POOL)}, cold={len(COLD_POOL)}, mem={mem_pct:.1f}%")
