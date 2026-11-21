@@ -1,0 +1,9 @@
+# 重复代码存量基线（scripts/check_dupes.py --update 生成）
+# 格式: 指纹 出现文件数
+# 行数变多 = 重复在扩散，门禁会失败；修掉后 --update 收紧。
+#
+# 2026-11-10：升级为双窗口 (6,5)，抓出 5 行短函数的重复。
+# 本批把前端 4 处 + 后端 7 块存量全部收敛（event/_sub.py 订阅退订、
+# project/config.merge_plugin_config、security/audit/ast.attr_chain、
+# tools/builtin/docs/_common.py），基线收紧为 0 块。
+# 新出现任何跨文件重复都会直接 FAIL，不许再登记存量。
