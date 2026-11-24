@@ -53,12 +53,6 @@
 
 内置模板：代码审查、文档生成、数据分析等，开箱即用。
 
-### 知识库
-
-把 PDF、Word、Excel、PPT、Markdown 拖进去，AI 就能基于这些文档回答你的问题。纯本地检索，文档不会上传到任何云端。
-
-![知识库](docs/screenshots/knowledge-base.png)
-
 ### 支持多家 AI 模型
 
 OpenAI、Claude、DeepSeek、通义千问、本地 Ollama 等，统一界面一键切换，Token 用量一目了然。
@@ -73,7 +67,7 @@ OpenAI、Claude、DeepSeek、通义千问、本地 Ollama 等，统一界面一�
 
 ### 插件扩展
 
-就像手机装 App，按需加载工具、技能包、外部服务。会写代码可以自己开发，见 [插件开发文档](docs/PLUGIN_DEV_GUIDE.md)。
+就像手机装 App，按需加载工具、技能包、外部服务。会写代码可以自己开发。
 
 ![插件管理](docs/screenshots/plugins.png)
 
@@ -82,10 +76,6 @@ OpenAI、Claude、DeepSeek、通义千问、本地 Ollama 等，统一界面一�
 AI 能做什么、不能做什么，你说了算——每个工具都可以设为"允许""需确认""禁止"。所有操作留痕，可追溯。
 
 ![策略配置](docs/screenshots/policy.png)
-
-### 代码治理
-
-自动审查代码 PR，检查规范、扫描依赖漏洞，接入你的 CI/CD 流程。适合团队管控代码质量。
 
 ---
 
@@ -102,7 +92,6 @@ Apache-2.0 开源，可自由使用、修改、商用。详见 [LICENSE](LICENSE
 - **垂直 AI Bot**：客服、文档问答、销售辅助
 - **私有化部署**：多租户、权限隔离、内网离线
 - **定制开发**：插件、工作流、系统对接
-- **代码治理咨询**：审查流程搭建、规范落地、CI/CD 集成
 - **技术培训**：架构评审、二次开发辅导
 
 在 [Issues](https://github.com/xslower/WF-AgHarness/issues) 标注"商务咨询"，或关注下方渠道联系我们。
